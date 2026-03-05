@@ -210,6 +210,32 @@ class EntityTypeConfig(BaseModel):
 
     name: str
     description: str
+    fields: list['OntologyFieldConfig'] = Field(default_factory=list)
+
+
+class OntologyFieldConfig(BaseModel):
+    """Ontology field configuration used for dynamic Pydantic model creation."""
+
+    name: str
+    type: str = Field(default='string', description='Field type (string, int, float, bool, datetime, list[T])')
+    description: str = ''
+    required: bool = False
+
+
+class EdgeTypeConfig(BaseModel):
+    """Edge type configuration."""
+
+    name: str
+    description: str
+    fields: list[OntologyFieldConfig] = Field(default_factory=list)
+
+
+class EdgeTypeMapConfig(BaseModel):
+    """Config mapping entity type pairs to allowed edge types."""
+
+    source: str
+    target: str
+    edge_types: list[str] = Field(default_factory=list)
 
 
 class GraphitiAppConfig(BaseModel):
@@ -219,6 +245,9 @@ class GraphitiAppConfig(BaseModel):
     episode_id_prefix: str | None = Field(default='', description='Episode ID prefix')
     user_id: str = Field(default='mcp_user', description='User ID')
     entity_types: list[EntityTypeConfig] = Field(default_factory=list)
+    edge_types: list[EdgeTypeConfig] = Field(default_factory=list)
+    edge_type_map: list[EdgeTypeMapConfig] = Field(default_factory=list)
+    excluded_entity_types: list[str] = Field(default_factory=list)
 
     def model_post_init(self, __context) -> None:
         """Convert None to empty string for episode_id_prefix."""

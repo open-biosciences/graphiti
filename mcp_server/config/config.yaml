@@ -109,3 +109,26 @@ graphiti:
       description: "Subject of conversation, interest, or knowledge domain (use as last resort)"
     - name: "Object"
       description: "Physical items, tools, devices, or possessions (use as last resort)"
+  # Optional: custom edge types for structured relationship extraction
+  # edge_types:
+  #   - name: "Employment"
+  #     description: "Employment relationship between a person and company"
+  #     fields:
+  #       - name: "position"
+  #         type: "string"
+  #         description: "Job title"
+  #       - name: "start_date"
+  #         type: "datetime"
+  #         description: "Employment start date"
+  #
+  # Optional: map entity type pairs to allowed edge types
+  # edge_type_map:
+  #   - source: "Person"
+  #     target: "Company"
+  #     edge_types: ["Employment"]
+  #   - source: "Entity"
+  #     target: "Entity"
+  #     edge_types: ["Employment"]
+  #
+  # Optional: skip specific entity types during extraction
+  # excluded_entity_types: []

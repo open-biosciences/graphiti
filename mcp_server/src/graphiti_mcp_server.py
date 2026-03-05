@@ -8,17 +8,18 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from dotenv import load_dotenv
 from graphiti_core import Graphiti
 from graphiti_core.edges import EntityEdge
-from graphiti_core.nodes import EpisodeType, EpisodicNode
+from graphiti_core.nodes import EntityNode, EpisodeType, EpisodicNode
 from graphiti_core.search.search_filters import SearchFilters
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data
 from mcp.server.fastmcp import FastMCP
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, create_model
 from starlette.responses import JSONResponse
 
 from config.schema import GraphitiConfig, ServerConfig
@@ -112,6 +113,77 @@ logger = logging.getLogger(__name__)
 # Create global config instance - will be properly initialized later
 config: GraphitiConfig
 
+SUPPORTED_ONTOLOGY_FIELD_TYPES: dict[str, Any] = {
+    'str': str,
+    'string': str,
+    'text': str,
+    'int': int,
+    'integer': int,
+    'float': float,
+    'bool': bool,
+    'boolean': bool,
+    'datetime': datetime,
+    'date': date,
+    'dict': dict[str, Any],
+    'object': dict[str, Any],
+}
+PROTECTED_ENTITY_ATTRIBUTE_NAMES = set(EntityNode.model_fields.keys())
+
+
+def parse_ontology_field_type(type_name: str) -> Any:
+    """Resolve a config field type into a Python/Pydantic annotation."""
+    normalized = type_name.strip().lower()
+
+    if normalized.startswith('list[') and normalized.endswith(']'):
+        inner = normalized[len('list[') : -1].strip()
+        return list[parse_ontology_field_type(inner)]
+
+    if normalized in SUPPORTED_ONTOLOGY_FIELD_TYPES:
+        return SUPPORTED_ONTOLOGY_FIELD_TYPES[normalized]
+
+    raise ValueError(
+        f'Unsupported ontology field type "{type_name}". '
+        f'Supported: {", ".join(sorted(SUPPORTED_ONTOLOGY_FIELD_TYPES.keys()))}, list[T]'
+    )
+
+
+def build_ontology_model(
+    model_name: str,
+    model_description: str,
+    fields: list[Any],
+    *,
+    model_kind: str,
+) -> type[BaseModel]:
+    """Create a dynamic Pydantic model for custom entity/edge ontology types."""
+    model_fields: dict[str, tuple[Any, Any]] = {}
+
+    for field_config in fields:
+        if model_kind == 'entity' and field_config.name in PROTECTED_ENTITY_ATTRIBUTE_NAMES:
+            protected_names = ', '.join(sorted(PROTECTED_ENTITY_ATTRIBUTE_NAMES))
+            raise ValueError(
+                f'"{field_config.name}" cannot be used as an attribute for {model_name}. '
+                f'Protected names: {protected_names}'
+            )
+
+        annotation = parse_ontology_field_type(field_config.type)
+        default_value: Any = ...
+        if not field_config.required:
+            annotation = annotation | None
+            default_value = None
+
+        model_fields[field_config.name] = (
+            annotation,
+            Field(default_value, description=field_config.description),
+        )
+
+    return create_model(
+        model_name,
+        __base__=BaseModel,
+        __doc__=model_description,
+        **model_fields,
+    )
+
+
 # MCP server instructions
 GRAPHITI_MCP_INSTRUCTIONS = """
 Graphiti is a memory service for AI agents built on a knowledge graph. Graphiti performs well
@@ -167,6 +239,9 @@ class GraphitiService:
         self.semaphore = asyncio.Semaphore(semaphore_limit)
         self.client: Graphiti | None = None
         self.entity_types = None
+        self.edge_types = None
+        self.edge_type_map = None
+        self.excluded_entity_types = None
 
     async def initialize(self) -> None:
         """Initialize the Graphiti client with factory-created components."""
@@ -190,24 +265,54 @@ class GraphitiService:
             # Get database configuration
             db_config = DatabaseDriverFactory.create_config(self.config.database)
 
-            # Build entity types from configuration
-            custom_types = None
+            # Build entity and edge ontology types from configuration.
+            custom_entity_types = None
+            custom_edge_types = None
+            custom_edge_type_map = None
             if self.config.graphiti.entity_types:
-                custom_types = {}
+                custom_entity_types = {}
                 for entity_type in self.config.graphiti.entity_types:
-                    # Create a dynamic Pydantic model for each entity type
-                    # Note: Don't use 'name' as it's a protected Pydantic attribute
-                    entity_model = type(
+                    entity_model = build_ontology_model(
                         entity_type.name,
-                        (BaseModel,),
-                        {
-                            '__doc__': entity_type.description,
-                        },
+                        entity_type.description,
+                        entity_type.fields,
+                        model_kind='entity',
                     )
-                    custom_types[entity_type.name] = entity_model
+                    custom_entity_types[entity_type.name] = entity_model
+
+            if self.config.graphiti.edge_types:
+                custom_edge_types = {}
+                for edge_type in self.config.graphiti.edge_types:
+                    edge_model = build_ontology_model(
+                        edge_type.name,
+                        edge_type.description,
+                        edge_type.fields,
+                        model_kind='edge',
+                    )
+                    custom_edge_types[edge_type.name] = edge_model
+
+            if self.config.graphiti.edge_type_map:
+                custom_edge_type_map = {}
+                valid_edge_type_names = set(custom_edge_types.keys()) if custom_edge_types else set()
+                for mapping in self.config.graphiti.edge_type_map:
+                    if valid_edge_type_names:
+                        invalid_edge_names = set(mapping.edge_types) - valid_edge_type_names
+                        if invalid_edge_names:
+                            raise ValueError(
+                                f'edge_type_map[{mapping.source}, {mapping.target}] references '
+                                f'undefined edge types: {", ".join(sorted(invalid_edge_names))}'
+                            )
+                    custom_edge_type_map[(mapping.source, mapping.target)] = mapping.edge_types
+            elif custom_edge_types:
+                # If custom edge types are configured without a map, allow all
+                # custom edge types between any entity pair.
+                custom_edge_type_map = {('Entity', 'Entity'): list(custom_edge_types.keys())}
 
             # Store entity types for later use
-            self.entity_types = custom_types
+            self.entity_types = custom_entity_types
+            self.edge_types = custom_edge_types
+            self.edge_type_map = custom_edge_type_map
+            self.excluded_entity_types = self.config.graphiti.excluded_entity_types or None
 
             # Initialize Graphiti client with appropriate driver
             try:
@@ -302,6 +407,10 @@ class GraphitiService:
             else:
                 logger.info('Using default entity types')
 
+            if self.edge_types:
+                edge_type_names = list(self.edge_types.keys())
+                logger.info(f'Using custom edge types: {", ".join(edge_type_names)}')
+
             logger.info(f'Using database: {self.config.database.provider}')
             logger.info(f'Using group_id: {self.config.graphiti.group_id}')
 
@@ -392,6 +501,9 @@ async def add_memory(
             source_description=source_description,
             episode_type=episode_type,
             entity_types=graphiti_service.entity_types,
+            edge_types=graphiti_service.edge_types,
+            edge_type_map=graphiti_service.edge_type_map,
+            excluded_entity_types=graphiti_service.excluded_entity_types,
             uuid=uuid or None,  # Ensure None is passed if uuid is None
         )
 

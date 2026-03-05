@@ -189,35 +189,113 @@ embedder:
 
 Make sure Ollama is running locally with: `ollama serve`
 
-### Entity Types
+### Custom Entity and Edge Types
 
-Graphiti MCP Server includes built-in entity types for structured knowledge extraction. These entity types are always enabled and configured via the `entity_types` section in your `config.yaml`:
+Graphiti MCP Server can ingest episodes with custom ontology definitions using:
 
-**Available Entity Types:**
+- `graphiti.entity_types`
+- `graphiti.edge_types`
+- `graphiti.edge_type_map`
+- `graphiti.excluded_entity_types` (optional)
 
-- **Preference**: User preferences, choices, opinions, or selections (prioritized for user-specific information)
-- **Requirement**: Specific needs, features, or functionality that must be fulfilled
-- **Procedure**: Standard operating procedures and sequential instructions
-- **Location**: Physical or virtual places where activities occur
-- **Event**: Time-bound activities, occurrences, or experiences
-- **Organization**: Companies, institutions, groups, or formal entities
-- **Document**: Information content in various forms (books, articles, reports, videos, etc.)
-- **Topic**: Subject of conversation, interest, or knowledge domain (used as a fallback)
-- **Object**: Physical items, tools, devices, or possessions (used as a fallback)
+This is passed through to Graphiti core's `add_episode(..., entity_types=..., edge_types=..., edge_type_map=...)`.
 
-These entity types are defined in `config.yaml` and can be customized by modifying the descriptions:
+Example `config.yaml`:
 
 ```yaml
 graphiti:
+  group_id: "main"
+
   entity_types:
-    - name: "Preference"
-      description: "User preferences, choices, opinions, or selections"
-    - name: "Requirement"
-      description: "Specific needs, features, or functionality"
-    # ... additional entity types
+    - name: "Person"
+      description: "A person entity with biographical information."
+      fields:
+        - name: "age"
+          type: "int"
+          description: "Age in years"
+        - name: "occupation"
+          type: "string"
+          description: "Current occupation"
+        - name: "birth_date"
+          type: "datetime"
+          description: "Date of birth"
+
+    - name: "Company"
+      description: "A business organization."
+      fields:
+        - name: "industry"
+          type: "string"
+          description: "Primary industry"
+        - name: "founded_year"
+          type: "int"
+          description: "Year company was founded"
+
+  edge_types:
+    - name: "Employment"
+      description: "Employment relationship between a person and company."
+      fields:
+        - name: "position"
+          type: "string"
+          description: "Job title"
+        - name: "start_date"
+          type: "datetime"
+          description: "Employment start date"
+        - name: "is_current"
+          type: "bool"
+          description: "Whether employment is current"
+
+    - name: "Partnership"
+      description: "Partnership relationship between companies."
+      fields:
+        - name: "deal_value"
+          type: "float"
+          description: "Deal value in USD"
+
+  edge_type_map:
+    - source: "Person"
+      target: "Company"
+      edge_types: ["Employment"]
+    - source: "Company"
+      target: "Company"
+      edge_types: ["Partnership"]
+    - source: "Entity"
+      target: "Entity"
+      edge_types: ["Partnership"]
+
+  excluded_entity_types: []
 ```
 
-The MCP server automatically uses these entity types during episode ingestion to extract and structure information from conversations and documents.
+Supported field types:
+
+- `string` / `str`
+- `int` / `integer`
+- `float`
+- `bool` / `boolean`
+- `datetime`
+- `date`
+- `dict` / `object`
+- `list[T]` (for example `list[string]`, `list[int]`)
+
+If you define `edge_types` without `edge_type_map`, the server defaults to:
+
+```python
+{('Entity', 'Entity'): [all_custom_edge_type_names]}
+```
+
+Protected entity attribute names:
+
+- `uuid`
+- `name`
+- `group_id`
+- `labels`
+- `created_at`
+- `summary`
+- `attributes`
+- `name_embedding`
+
+If one of these is used in an entity field, ingestion fails with a validation error.
+
+For a complete walkthrough, see [`docs/custom_entity_edge_types.md`](docs/custom_entity_edge_types.md).
 
 ### Environment Variables
 
