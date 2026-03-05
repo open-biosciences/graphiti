@@ -193,12 +193,27 @@ Make sure Ollama is running locally with: `ollama serve`
 
 Graphiti MCP Server can ingest episodes with custom ontology definitions using:
 
+- `graphiti.ontology_preset` (built-in preset, currently `biosciences`)
 - `graphiti.entity_types`
 - `graphiti.edge_types`
 - `graphiti.edge_type_map`
 - `graphiti.excluded_entity_types` (optional)
 
 This is passed through to Graphiti core's `add_episode(..., entity_types=..., edge_types=..., edge_type_map=...)`.
+
+Quick-start with built-in biosciences preset:
+
+```yaml
+graphiti:
+  ontology_preset: "biosciences"
+  group_id: "bio-research-main"
+```
+
+The `biosciences` preset includes trial- and synthetic-lethality-specific ontology:
+
+- Entity types: `Gene`, `Protein`, `DrugCompound`, `Disease`, `Pathway`, `ClinicalTrial`, `Variant`, `Biomarker`
+- Edge types: `SyntheticLethalWith`, `Targets`, `InvestigatedIn`, `TreatedBy`, `InvolvedIn`, `AssociatedWith`, `ConfersResistanceTo`, `BiomarkerFor`
+- Symmetric edge mappings for directional pairs (for example both `DrugCompound -> ClinicalTrial` and `ClinicalTrial -> DrugCompound`)
 
 Example `config.yaml`:
 

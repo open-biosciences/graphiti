@@ -6,12 +6,29 @@ This guide shows how to configure custom ontology types in Graphiti MCP Server a
 
 The MCP server now supports:
 
+- `graphiti.ontology_preset` (built-in preset: `biosciences`)
 - `graphiti.entity_types`
 - `graphiti.edge_types`
 - `graphiti.edge_type_map`
 - `graphiti.excluded_entity_types` (optional)
 
 These are passed through to Graphiti core `add_episode(...)` during `add_memory`.
+
+## Built-in Biosciences Preset
+
+To enable the built-in biosciences preset:
+
+```yaml
+graphiti:
+  ontology_preset: biosciences
+  group_id: bio-research-main
+```
+
+The preset includes trial/SL-specific ontology:
+
+- Entities: `Gene`, `Protein`, `DrugCompound`, `Disease`, `Pathway`, `ClinicalTrial`, `Variant`, `Biomarker`
+- Edges: `SyntheticLethalWith`, `Targets`, `InvestigatedIn`, `TreatedBy`, `InvolvedIn`, `AssociatedWith`, `ConfersResistanceTo`, `BiomarkerFor`
+- Symmetric edge map entries for directional pairs
 
 ## 1) Configure `config.yaml`
 

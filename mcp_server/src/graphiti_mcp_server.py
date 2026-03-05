@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, create_model
 from starlette.responses import JSONResponse
 
 from config.schema import GraphitiConfig, ServerConfig
+from models.ontology_presets import get_ontology_preset
 from models.response_types import (
     EpisodeSearchResponse,
     ErrorResponse,
@@ -265,12 +266,26 @@ class GraphitiService:
             # Get database configuration
             db_config = DatabaseDriverFactory.create_config(self.config.database)
 
-            # Build entity and edge ontology types from configuration.
+            # Build entity and edge ontology from preset + configuration.
             custom_entity_types = None
             custom_edge_types = None
             custom_edge_type_map = None
+            preset_name = self.config.graphiti.ontology_preset
+            preset_excluded_entity_types: list[str] = []
+
+            if preset_name:
+                preset = get_ontology_preset(preset_name)
+                custom_entity_types = dict(preset.entity_types)
+                custom_edge_types = dict(preset.edge_types)
+                custom_edge_type_map = {
+                    (source, target): list(edge_type_names)
+                    for (source, target), edge_type_names in preset.edge_type_map.items()
+                }
+                preset_excluded_entity_types = list(preset.excluded_entity_types)
+
             if self.config.graphiti.entity_types:
-                custom_entity_types = {}
+                if custom_entity_types is None:
+                    custom_entity_types = {}
                 for entity_type in self.config.graphiti.entity_types:
                     entity_model = build_ontology_model(
                         entity_type.name,
@@ -281,7 +296,8 @@ class GraphitiService:
                     custom_entity_types[entity_type.name] = entity_model
 
             if self.config.graphiti.edge_types:
-                custom_edge_types = {}
+                if custom_edge_types is None:
+                    custom_edge_types = {}
                 for edge_type in self.config.graphiti.edge_types:
                     edge_model = build_ontology_model(
                         edge_type.name,
@@ -292,7 +308,8 @@ class GraphitiService:
                     custom_edge_types[edge_type.name] = edge_model
 
             if self.config.graphiti.edge_type_map:
-                custom_edge_type_map = {}
+                if custom_edge_type_map is None:
+                    custom_edge_type_map = {}
                 valid_edge_type_names = set(custom_edge_types.keys()) if custom_edge_types else set()
                 for mapping in self.config.graphiti.edge_type_map:
                     if valid_edge_type_names:
@@ -312,7 +329,9 @@ class GraphitiService:
             self.entity_types = custom_entity_types
             self.edge_types = custom_edge_types
             self.edge_type_map = custom_edge_type_map
-            self.excluded_entity_types = self.config.graphiti.excluded_entity_types or None
+            excluded_entity_types = list(self.config.graphiti.excluded_entity_types)
+            combined_excluded = sorted(set(preset_excluded_entity_types + excluded_entity_types))
+            self.excluded_entity_types = combined_excluded or None
 
             # Initialize Graphiti client with appropriate driver
             try:
@@ -410,6 +429,9 @@ class GraphitiService:
             if self.edge_types:
                 edge_type_names = list(self.edge_types.keys())
                 logger.info(f'Using custom edge types: {", ".join(edge_type_names)}')
+
+            if preset_name:
+                logger.info(f'Using ontology preset: {preset_name}')
 
             logger.info(f'Using database: {self.config.database.provider}')
             logger.info(f'Using group_id: {self.config.graphiti.group_id}')

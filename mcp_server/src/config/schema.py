@@ -244,6 +244,10 @@ class GraphitiAppConfig(BaseModel):
     group_id: str = Field(default='main', description='Group ID')
     episode_id_prefix: str | None = Field(default='', description='Episode ID prefix')
     user_id: str = Field(default='mcp_user', description='User ID')
+    ontology_preset: str | None = Field(
+        default=None,
+        description='Built-in ontology preset name (for example: biosciences)',
+    )
     entity_types: list[EntityTypeConfig] = Field(default_factory=list)
     edge_types: list[EdgeTypeConfig] = Field(default_factory=list)
     edge_type_map: list[EdgeTypeMapConfig] = Field(default_factory=list)
