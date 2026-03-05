@@ -2,6 +2,8 @@
 
 This guide shows how to configure custom ontology types in Graphiti MCP Server and ingest episodes with them.
 
+For the fork-specific biosciences preset walkthrough, see [`../README_biosciences.md`](../README_biosciences.md).
+
 ## What Is Supported
 
 The MCP server now supports:
